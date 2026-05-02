@@ -1,5 +1,6 @@
 const config = require("../utils/config");
 const { formatDurationMs } = require("../utils/time");
+const { getRoleTrackLabel, normalizeRoleTracks } = require("../utils/roleTracks");
 
 function startup() {
     let text = [
@@ -24,12 +25,19 @@ function startup() {
     return text;
 }
 
-function buildPollMessage(member) {
+function buildPollMessage(member, options = {}) {
+    const roleTracks = normalizeRoleTracks(options.roleTracks);
+    const labels = roleTracks.map(getRoleTrackLabel);
+    const trackText = labels.length ? ` como **${labels.join(" / ")}**` : "";
+    const gamesText = options.roleGames
+        ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
+        : config.POLL_THRESHOLD_GAMES;
+
     return {
-        content: `@everyone\n# Enquete de aprovacao - ${member} chegou a **${config.POLL_THRESHOLD_GAMES} partidas** e finalizou a fase de teste.\nVote abaixo se ele(a) merece ser promovido(a).${config.DEBUG_MODE ? "\n[debug] Veredito sera processado na proxima verificacao." : ""}`,
+        content: `@everyone\n# Enquete de aprovacao - ${member} chegou a **${gamesText} partidas${trackText}** e finalizou a fase de teste.\nVote abaixo se ele(a) merece ser promovido(a).${config.DEBUG_MODE ? "\n[debug] Veredito sera processado na proxima verificacao." : ""}`,
         allowedMentions: { parse: ["everyone", "users"] },
         poll: {
-            question: { text: `${member.user.username} merece o cargo de aprovado?` },
+            question: { text: `${member.user.username} merece o cargo de ${labels.join(" / ") || "aprovado"}?` },
             answers: [{ text: "Sim" }, { text: "Nao" }],
             duration: config.DEBUG_MODE ? 1 : 24,
             allowMultiselect: false,

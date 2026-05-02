@@ -2,7 +2,7 @@ const config = require("../utils/config");
 const { readJson, saveJson } = require("../utils/jsonStore");
 const messages = require("../ui/messages");
 const { getVoteByMessageId, updateVoteStatusByMessageId } = require("../database/create");
-const { normalizeRoleTracks, getRoleIdsForTracks } = require("../utils/roleTracks");
+const { getMemberApprovedRoleTracks, normalizeRoleTracks, getRoleIdsForTracks } = require("../utils/roleTracks");
 const log = require("./logger");
 
 const STORE_NAME = "pending_polls";
@@ -31,7 +31,11 @@ async function openPoll(channel, member, options = {}) {
     const roleTracks = normalizeRoleTracks(options.roleTracks);
 
     try {
-        const message = await channel.send(messages.buildPollMessage(member));
+        const message = await channel.send(messages.buildPollMessage(member, {
+            roleTracks,
+            thresholdGames: options.thresholdGames ?? config.POLL_THRESHOLD_GAMES,
+            roleGames: options.roleGames,
+        }));
         pendingPolls[message.id] = {
             memberId: member.id,
             endsAt: Date.now() + config.POLL_DURATION_MS,
@@ -122,7 +126,35 @@ async function finalizePoll(client, messageId) {
     const member = pendingPoll.memberId
         ? await guild?.members.fetch(pendingPoll.memberId).catch(() => null)
         : null;
-    const roleTracks = await resolveStoredRoleTracks(messageId, pendingPoll);
+    let roleTracks = await resolveStoredRoleTracks(messageId, pendingPoll);
+
+    if (!roleTracks.length) {
+        log.warn(`Enquete ${messageId} ignorada; trilha de posicao nao encontrada.`);
+        await updateVoteStatusByMessageId(messageId, "missing_role_track").catch((error) => {
+            log.error("Falha ao marcar enquete sem trilha no banco:", error.message);
+        });
+        removePendingPoll(messageId);
+        return;
+    }
+
+    if (member) {
+        const approvedRoleTracks = getMemberApprovedRoleTracks(member);
+        const pendingRoleTracks = roleTracks.filter((track) => !approvedRoleTracks.includes(track));
+
+        if (roleTracks.length && !pendingRoleTracks.length) {
+            log.warn(`Enquete ${messageId} ignorada; ${member.user.tag} ja possui cargo aprovado.`);
+            await updateVoteStatusByMessageId(messageId, "already_approved").catch((error) => {
+                log.error("Falha ao marcar enquete duplicada no banco:", error.message);
+            });
+            await message.delete().catch(() => {
+                log.warn(`Nao foi possivel deletar a enquete duplicada ${messageId}`);
+            });
+            removePendingPoll(messageId);
+            return;
+        }
+
+        roleTracks = pendingRoleTracks;
+    }
 
     if (roleTracks.length > 1) {
         log.warn(`Enquete ${messageId} sera resolvida para multiplas trilhas: ${roleTracks.join(", ")}`);
@@ -157,11 +189,29 @@ async function finalizePoll(client, messageId) {
         status = "rejected";
 
         if (member) {
-            await channel.send(messages.pollRejected(member.user.tag));
-            await member.kick("Reprovado na enquete da comunidade.").catch((error) => {
-                log.error("Falha ao kickar membro reprovado:", error.message);
-            });
-            log.ok(`Membro reprovado e removido: ${member.user.tag}`);
+            const approvedRoleTracks = getMemberApprovedRoleTracks(member)
+                .filter((track) => !roleTracks.includes(track));
+
+            if (approvedRoleTracks.length) {
+                const testRoleIds = getRoleIdsForTracks(roleTracks, "test");
+
+                if (testRoleIds.length) {
+                    await member.roles.remove(testRoleIds).catch((error) => {
+                        log.error("Falha ao remover cargos de teste:", error.message);
+                    });
+                }
+
+                await channel.send(
+                    `A enquete encerrou! **${member.user.tag}** foi reprovado(a) nesta posicao. O cargo de teste foi removido.`
+                );
+                log.ok(`Membro reprovado em ${roleTracks.join(", ")}; mantido no servidor por ja possuir outra aprovacao: ${member.user.tag}`);
+            } else {
+                await channel.send(messages.pollRejected(member.user.tag));
+                await member.kick("Reprovado na enquete da comunidade.").catch((error) => {
+                    log.error("Falha ao kickar membro reprovado:", error.message);
+                });
+                log.ok(`Membro reprovado e removido: ${member.user.tag}`);
+            }
         } else {
             await channel.send(messages.pollRejectedNotFound(pendingPoll.memberId));
         }

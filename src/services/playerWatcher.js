@@ -7,7 +7,12 @@ const {
     upsertPlayerProgress,
 } = require("../database/create");
 const config = require("../utils/config");
-const { getMemberTestRoleTracks } = require("../utils/roleTracks");
+const {
+    getMemberApprovedRoleTracks,
+    getMemberTestRoleTracks,
+    getRoleTrackLabel,
+    getRoleTrackStatsKey,
+} = require("../utils/roleTracks");
 const log = require("./logger");
 
 async function checkPlayers(client, guild, channel) {
@@ -30,41 +35,63 @@ async function checkPlayers(client, guild, channel) {
                 continue;
             }
 
-            const roleTracks = getMemberTestRoleTracks(member);
+            const testRoleTracks = getMemberTestRoleTracks(member);
+            const approvedRoleTracks = getMemberApprovedRoleTracks(member);
+            const roleTracks = testRoleTracks.filter((track) => !approvedRoleTracks.includes(track));
             const progress = await getPlayerProgress(discordUserId);
-            const previousGames = Number(progress?.last_total_games ?? 0);
-            const existingVote = await getVoteByUserAndThreshold(discordUserId, threshold);
+
+            if (testRoleTracks.length > roleTracks.length) {
+                log.warn(
+                    `${member.user.tag} ja possui cargo aprovado para: ${approvedRoleTracks.join(", ")}. Ignorando trilha(s) de teste duplicada(s).`
+                );
+            }
 
             if (roleTracks.length > 1) {
-                log.warn(`${member.user.tag} esta em multiplas trilhas de teste: ${roleTracks.join(", ")}`);
+                log.warn(`${member.user.tag} esta em multiplas trilhas de teste pendentes: ${roleTracks.join(", ")}`);
             }
 
             log.info(
-                `${member.user.tag} | prev=${previousGames} | now=${totalGames} | tracks=${roleTracks.join(",") || "none"} | vote=${Boolean(existingVote)}`
+                `${member.user.tag} | total=${totalGames} | major=${player.roleGames?.major || 0} | gkmajor=${player.roleGames?.gkmajor || 0} | testTracks=${testRoleTracks.join(",") || "none"} | approvedTracks=${approvedRoleTracks.join(",") || "none"} | pendingTracks=${roleTracks.join(",") || "none"}`
             );
 
-            if (roleTracks.length && previousGames < threshold && totalGames >= threshold && !existingVote) {
-                log.poll(`${member.user.tag} cruzou ${threshold} partidas. Abrindo enquete.`);
-                const pollMessage = await openPoll(channel, member, {
-                    roleTracks,
-                    thresholdGames: threshold,
-                });
+            for (const roleTrack of roleTracks) {
+                const statsKey = getRoleTrackStatsKey(roleTrack);
+                const roleGames = Number(player.roleGames?.[statsKey] || 0);
+                const previousRoleGames = progress
+                    ? Number(progress[`last_${statsKey}_games`] || 0)
+                    : roleGames;
+                const existingVote = await getVoteByUserAndThreshold(discordUserId, threshold, roleTrack);
+                const label = getRoleTrackLabel(roleTrack);
 
-                if (pollMessage) {
-                    await createVote({
-                        discordUserId,
-                        discordTag: member.user.tag,
+                log.info(
+                    `${member.user.tag} | track=${roleTrack} (${label}) | prev=${previousRoleGames} | now=${roleGames} | vote=${Boolean(existingVote)}`
+                );
+
+                if (previousRoleGames < threshold && roleGames >= threshold && !existingVote) {
+                    log.poll(`${member.user.tag} cruzou ${threshold} partidas como ${label}. Abrindo enquete.`);
+                    const pollMessage = await openPoll(channel, member, {
+                        roleTracks: [roleTrack],
                         thresholdGames: threshold,
-                        totalGamesWhenTriggered: totalGames,
-                        roleTracks,
-                        voteMessageId: pollMessage.id,
-                        voteChannelId: channel.id,
-                        status: "open",
+                        roleGames,
                     });
+
+                    if (pollMessage) {
+                        await createVote({
+                            discordUserId,
+                            discordTag: member.user.tag,
+                            roleTrack,
+                            thresholdGames: threshold,
+                            totalGamesWhenTriggered: roleGames,
+                            roleTracks: [roleTrack],
+                            voteMessageId: pollMessage.id,
+                            voteChannelId: channel.id,
+                            status: "open",
+                        });
+                    }
                 }
             }
 
-            await upsertPlayerProgress(discordUserId, member.user.tag, totalGames);
+            await upsertPlayerProgress(discordUserId, member.user.tag, totalGames, player.roleGames);
         }
     } catch (error) {
         log.error("Erro no loop de players:", error.message);
