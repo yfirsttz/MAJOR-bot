@@ -19,54 +19,88 @@ function normalizePlayerRole(role) {
     return null;
 }
 
-async function getRoleGameCountsByPlayer() {
-    try {
-        const response = await axios.get(`${API_ROOT}/api/v1/history/${config.SERVER_ID}`, {
-            headers: {
-                Authorization: `Bearer ${config.NEATQUEUE_API_TOKEN}`,
-            },
-            params: {
-                limit: 1000,
-                order: "desc",
-                ...(config.QUEUE_NAME ? { queue_name: config.QUEUE_NAME } : {}),
-            },
-            validateStatus: () => true,
-        });
+function findPlayerInMatch(match, discordId) {
+    for (const team of match?.teams || []) {
+        for (const player of team || []) {
+            if (String(player?.id || "").trim() === discordId) {
+                return player;
+            }
+        }
+    }
 
-        if (response.status < 200 || response.status >= 300) {
-            log.error(`getRoleGameCountsByPlayer HTTP ${response.status}:`, response.data);
-            return new Map();
+    return null;
+}
+
+async function getPlayerRoleGameCounts(discordId) {
+    const playerId = String(discordId || "").trim();
+    if (!playerId) {
+        return null;
+    }
+
+    try {
+        const [statsResponse, historyResponse] = await Promise.all([
+            axios.get(`${API_ROOT}/api/v1/playerstats/${config.SERVER_ID}/${playerId}/${encodeURIComponent(config.QUEUE_NAME)}`, {
+                headers: {
+                    Authorization: `Bearer ${config.NEATQUEUE_API_TOKEN}`,
+                },
+                params: {
+                    include_games: true,
+                },
+                validateStatus: () => true,
+            }),
+            axios.get(`${API_ROOT}/api/v1/history/${config.SERVER_ID}`, {
+                headers: {
+                    Authorization: `Bearer ${config.NEATQUEUE_API_TOKEN}`,
+                },
+                params: {
+                    limit: 1000,
+                    player_id: playerId,
+                    ...(config.QUEUE_NAME ? { queue_name: config.QUEUE_NAME } : {}),
+                },
+                validateStatus: () => true,
+            }),
+        ]);
+
+        if (statsResponse.status < 200 || statsResponse.status >= 300) {
+            log.error(`getPlayerRoleGameCounts/playerstats HTTP ${statsResponse.status}:`, statsResponse.data);
+            return null;
         }
 
-        const countsByPlayer = new Map();
+        if (historyResponse.status < 200 || historyResponse.status >= 300) {
+            log.error(`getPlayerRoleGameCounts/history HTTP ${historyResponse.status}:`, historyResponse.data);
+            return null;
+        }
 
-        for (const match of response.data?.data || []) {
-            for (const team of match?.teams || []) {
-                for (const player of team || []) {
-                    const discordId = String(player?.id || "").trim();
-                    const roleTrack = normalizePlayerRole(player?.role);
+        const gameNumbers = new Set(
+            (statsResponse.data?.games || [])
+                .map((game) => String(game?.game_num || "").trim())
+                .filter(Boolean)
+        );
+        const counts = { major: 0, gkmajor: 0, missing: 0 };
 
-                    if (!discordId || !roleTrack) {
-                        continue;
-                    }
+        for (const gameNumber of gameNumbers) {
+            const match = (historyResponse.data?.data || [])
+                .find((game) => String(game?.game_num || "").trim() === gameNumber);
+            const player = match ? findPlayerInMatch(match, playerId) : null;
+            const roleTrack = normalizePlayerRole(player?.role);
 
-                    const counts = countsByPlayer.get(discordId) || { major: 0, gkmajor: 0 };
-                    counts[roleTrack] += 1;
-                    countsByPlayer.set(discordId, counts);
-                }
+            if (roleTrack) {
+                counts[roleTrack] += 1;
+            } else {
+                counts.missing += 1;
             }
         }
 
-        return countsByPlayer;
+        counts.total = gameNumbers.size;
+        return counts;
     } catch (error) {
-        log.error("Erro ao consultar historico por posicao:", error.response?.data ?? error.message);
-        return new Map();
+        log.error("Erro ao consultar partidas por posicao do jogador:", error.response?.data ?? error.message);
+        return null;
     }
 }
 
 async function getPlayers() {
     try {
-        const roleGameCounts = await getRoleGameCountsByPlayer();
         const url = `${V2_BASE_URL}/leaderboard/${config.SERVER_ID}/${config.QUEUE_CHANNEL_ID}`;
         const response = await axios.get(url, {
             headers: {
@@ -87,7 +121,7 @@ async function getPlayers() {
             return {
                 discordId,
                 matches: player.stats?.totalgames ?? 0,
-                roleGames: roleGameCounts.get(discordId) || { major: 0, gkmajor: 0 },
+                roleGames: { major: 0, gkmajor: 0 },
                 name: player.name,
             };
         });
@@ -158,6 +192,6 @@ async function triggerForceStart() {
 
 module.exports = {
     getPlayers,
-    getRoleGameCountsByPlayer,
+    getPlayerRoleGameCounts,
     triggerForceStart,
 };
