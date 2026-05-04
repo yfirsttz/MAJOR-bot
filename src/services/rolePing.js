@@ -1,5 +1,6 @@
 const config = require("../utils/config");
 const { readJson, saveJson } = require("../utils/jsonStore");
+const { buildQueueSnapshotFromPayload } = require("../utils/queuePayload");
 const messages = require("../ui/messages");
 const log = require("./logger");
 
@@ -175,7 +176,26 @@ async function evaluateSmartPing(client, options = {}) {
         return;
     }
 
-    const snapshot = await findLatestQueueSnapshot(client, options.expectedTotalPlayers ?? null);
+    const expectedTotalPlayers = options.expectedTotalPlayers ?? null;
+    const payloadSnapshot = buildQueueSnapshotFromPayload(options.payload);
+    const messageSnapshot = await findLatestQueueSnapshot(client, expectedTotalPlayers);
+    let snapshot = messageSnapshot;
+
+    if (
+        expectedTotalPlayers != null
+        && messageSnapshot
+        && messageSnapshot.totalPlayers !== expectedTotalPlayers
+        && payloadSnapshot
+    ) {
+        log.warn(
+            `Mensagem da fila ainda em ${messageSnapshot.totalPlayers}/${messageSnapshot.totalSlots}; usando payload do webhook com ${payloadSnapshot.totalPlayers}/${payloadSnapshot.totalSlots}.`
+        );
+        snapshot = payloadSnapshot;
+    } else if (!snapshot && payloadSnapshot) {
+        log.warn("Mensagem da fila nao encontrada; usando payload do webhook para smart ping.");
+        snapshot = payloadSnapshot;
+    }
+
     if (!snapshot) {
         log.debug("Nenhuma mensagem de fila parseavel encontrada para smart ping.");
         return;

@@ -131,32 +131,31 @@ async function getPlayers() {
     }
 }
 
-async function triggerForceStart() {
-    const baseBody = {
-        server_id: config.SERVER_ID,
-        channel_id: config.QUEUE_CHANNEL_ID,
-    };
+function buildJsonWithSnowflake(key, value) {
+    const snowflake = String(value || "").trim();
+    if (!/^\d+$/.test(snowflake)) {
+        throw new Error(`ID invalido para ${key}: ${value}`);
+    }
 
+    return `{"${key}":${snowflake}}`;
+}
+
+async function triggerForceStart() {
     const variants = [
         {
-            name: "bearer_complete",
-            body: config.QUEUE_NAME ? { ...baseBody, queue_name: config.QUEUE_NAME } : baseBody,
+            name: "bearer_channel_id_integer",
+            body: buildJsonWithSnowflake("channel_id", config.QUEUE_CHANNEL_ID),
             headers: { Authorization: `Bearer ${config.NEATQUEUE_API_TOKEN}` },
         },
         {
-            name: "bearer_without_queue_name",
-            body: baseBody,
+            name: "bearer_channel_id_string",
+            body: { channel_id: config.QUEUE_CHANNEL_ID },
             headers: { Authorization: `Bearer ${config.NEATQUEUE_API_TOKEN}` },
         },
         {
-            name: "authorization_raw",
-            body: config.QUEUE_NAME ? { ...baseBody, queue_name: config.QUEUE_NAME } : baseBody,
+            name: "authorization_raw_channel_id_integer",
+            body: buildJsonWithSnowflake("channel_id", config.QUEUE_CHANNEL_ID),
             headers: { Authorization: config.NEATQUEUE_API_TOKEN },
-        },
-        {
-            name: "x_api_key",
-            body: config.QUEUE_NAME ? { ...baseBody, queue_name: config.QUEUE_NAME } : baseBody,
-            headers: { "x-api-key": config.NEATQUEUE_API_TOKEN },
         },
     ];
 

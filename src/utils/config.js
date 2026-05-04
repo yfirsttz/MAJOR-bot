@@ -1,6 +1,18 @@
 function getString(name, fallback = "") {
     const value = process.env[name];
-    return value == null ? fallback : String(value).trim();
+    return value == null ? fallback : resolveEnvReference(value);
+}
+
+function resolveEnvReference(value) {
+    const text = String(value).trim();
+    const match = text.match(/^\$\(([^)]+)\)$/) || text.match(/^\$\{([^}]+)\}$/);
+
+    if (!match) {
+        return text;
+    }
+
+    const resolved = process.env[match[1]];
+    return resolved == null ? "" : String(resolved).trim();
 }
 
 function parseBoolean(value, fallback = false) {

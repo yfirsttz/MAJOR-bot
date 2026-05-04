@@ -6,9 +6,29 @@ const {
     isTargetQueue,
 } = require("./forceStart");
 const { evaluateSmartPing, resetSmartPingState } = require("./rolePing");
+const { getPayloadPlayers } = require("../utils/queuePayload");
 const log = require("./logger");
 
 let serverInstance = null;
+
+function getRequestPathname(url) {
+    try {
+        const pathname = new URL(url, "http://localhost").pathname;
+        return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+    } catch (_error) {
+        return url;
+    }
+}
+
+function isAuthorized(headers) {
+    if (!config.NEATQUEUE_WEBHOOK_TOKEN) {
+        return true;
+    }
+
+    const authHeader = String(headers.authorization || "").trim();
+    return authHeader === config.NEATQUEUE_WEBHOOK_TOKEN
+        || authHeader === `Bearer ${config.NEATQUEUE_WEBHOOK_TOKEN}`;
+}
 
 function startWebhookServer(client) {
     if (!config.WEBHOOK_FEATURES_ENABLED) {
@@ -27,7 +47,10 @@ function startWebhookServer(client) {
     log.info(`AUTO_FORCESTART=${config.AUTO_FORCESTART_ENABLED}`);
 
     serverInstance = http.createServer((req, res) => {
-        if (req.method === "GET" && req.url === "/health") {
+        const pathname = getRequestPathname(req.url);
+        const webhookPathname = getRequestPathname(config.PUBLIC_WEBHOOK_PATH);
+
+        if (req.method === "GET" && pathname === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
                 ok: true,
@@ -37,14 +60,13 @@ function startWebhookServer(client) {
             return;
         }
 
-        if (req.method !== "POST" || req.url !== config.PUBLIC_WEBHOOK_PATH) {
+        if (req.method !== "POST" || pathname !== webhookPathname) {
             res.writeHead(404, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Not found" }));
             return;
         }
 
-        const authHeader = String(req.headers.authorization || "");
-        if (config.NEATQUEUE_WEBHOOK_TOKEN && authHeader !== config.NEATQUEUE_WEBHOOK_TOKEN) {
+        if (!isAuthorized(req.headers)) {
             log.warn("Token do webhook invalido.");
             res.writeHead(401, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -78,7 +100,7 @@ function startWebhookServer(client) {
                 }
 
                 const action = payload.action;
-                const totalPlayers = Array.isArray(payload.players) ? payload.players.length : 0;
+                const totalPlayers = getPayloadPlayers(payload).length;
 
                 if (action === "JOIN_QUEUE" || action === "LEAVE_QUEUE") {
                     log.queue(`${action} recebido com ${totalPlayers} player(s).`);
@@ -91,6 +113,7 @@ function startWebhookServer(client) {
                         await evaluateSmartPing(client, {
                             reason: action,
                             expectedTotalPlayers: totalPlayers,
+                            payload,
                         });
                     }
                     return;
@@ -120,6 +143,7 @@ function startWebhookServer(client) {
                         await evaluateSmartPing(client, {
                             reason: action,
                             expectedTotalPlayers: totalPlayers,
+                            payload,
                         });
                     }
                     return;

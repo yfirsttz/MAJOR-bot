@@ -89,7 +89,7 @@ client.once("clientReady", async () => {
             void checkAllPendingPolls(client);
         }, POLL_CHECK_INTERVAL_MS);
     } catch (error) {
-        log.error("Falha durante a inicializacao do bot:", error.message);
+        log.error("Falha durante a inicializacao do bot:", error.stack || error.message || error);
         process.exit(1);
     }
 });
