@@ -59,7 +59,10 @@ function buildPrivatePollStaffMessage(member, options = {}) {
     const failedCount = options.failedCount ?? 0;
 
     return [
-        `# Votacao privada - ${member} chegou a **${gamesText} partidas${trackText}**`,
+        "@everyone",
+        `# Votacao de aprovacao aberta - ${member}`,
+        `${member} chegou a **${gamesText} partidas${trackText}** e finalizou a fase de teste.`,
+        "Votem no privado do bot usando os botoes **Sim** e **Nao** enviados por DM.",
         `Votos: **Sim ${yesVotes}** | **Nao ${noVotes}** | Total: **${totalVotes}**`,
         `DMs enviadas: **${sentCount}** | Falhas: **${failedCount}**`,
         `Encerra em: <t:${Math.floor((options.endsAt || Date.now()) / 1_000)}:R>`,

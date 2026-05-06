@@ -12,6 +12,7 @@ const log = require("./logger");
 
 const STORE_NAME = "pending_polls";
 const PRIVATE_POLL_CUSTOM_ID_PREFIX = "private_poll";
+const PRIVATE_POLL_TEST_CUSTOM_ID_PREFIX = "private_poll_test";
 
 let pendingPolls = readJson(STORE_NAME, {});
 let interactionHandlerRegistered = false;
@@ -68,6 +69,15 @@ function parsePrivatePollCustomId(customId) {
     }
 
     return { messageId, vote };
+}
+
+function parsePrivatePollTestCustomId(customId) {
+    const [prefix, vote] = String(customId || "").split(":");
+    if (prefix !== PRIVATE_POLL_TEST_CUSTOM_ID_PREFIX || !["yes", "no"].includes(vote)) {
+        return null;
+    }
+
+    return { vote };
 }
 
 function buildPrivatePollButtons(messageId) {
@@ -215,7 +225,7 @@ async function openPoll(channel, member, options = {}) {
     try {
         const message = await channel.send({
             content: messages.buildPrivatePollStaffMessage(member, pollOptions),
-            allowedMentions: { users: [member.id] },
+            allowedMentions: { parse: ["everyone", "users"] },
         });
         pendingPolls[message.id] = {
             mode: "dm",
@@ -475,6 +485,14 @@ function registerPollInteractionHandler(client) {
 
     client.on("interactionCreate", async (interaction) => {
         if (!interaction.isButton()) {
+            return;
+        }
+
+        const parsedTest = parsePrivatePollTestCustomId(interaction.customId);
+        if (parsedTest) {
+            await interaction.reply({
+                content: `Voto de teste registrado: **${parsedTest.vote === "yes" ? "Sim" : "Nao"}**.`,
+            }).catch(() => null);
             return;
         }
 
