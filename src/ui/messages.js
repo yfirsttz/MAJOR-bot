@@ -45,15 +45,11 @@ function buildPollMessage(member, options = {}) {
     };
 }
 
-function buildSmartPingMessage(queueSnapshot, roleIds) {
+function buildSmartPingMessage(_queueSnapshot, roleIds) {
     const mentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-    const needGoalkeeper = queueSnapshot.gkCount === 0;
-    const reason = needGoalkeeper
-        ? "Fila quase cheia sem goleiro. Chamando linha e goleiro."
-        : "Fila quase cheia com goleiro presente. Chamando linha.";
 
     return {
-        content: `${mentions}\n${reason}\nFila: ${queueSnapshot.totalPlayers}/${queueSnapshot.totalSlots} | GK ${queueSnapshot.gkCount}/${queueSnapshot.gkSlots} | LINHA ${queueSnapshot.lineCount}/${queueSnapshot.lineSlots}`,
+        content: mentions,
         allowedMentions: { roles: roleIds },
     };
 }
