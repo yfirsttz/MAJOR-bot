@@ -238,7 +238,7 @@ async function openPoll(channel, member, options = {}) {
         await updatePrivatePollStaffMessage(channel.client, message.id, member);
 
         log.poll(
-            `Votacao privada aberta para ${member.user.tag} (${roleTracks.join(", ") || "sem trilha"}) | DMs ${pendingPolls[message.id].dmSentCount}/${voterIds.length}.`
+            `Votacao privada aberta para ${member.user.tag} (${roleTracks.join(", ") || "sem posicao"}) | DMs ${pendingPolls[message.id].dmSentCount}/${voterIds.length}.`
         );
         return message;
     } catch (error) {
@@ -264,9 +264,9 @@ async function resolvePollOutcome(client, channel, messageId, pendingPoll, yesVo
     let roleTracks = await resolveStoredRoleTracks(messageId, pendingPoll);
 
     if (!roleTracks.length) {
-        log.warn(`Votacao ${messageId} ignorada; trilha de posicao nao encontrada.`);
+        log.warn(`Votacao ${messageId} ignorada; posicao nao encontrada.`);
         await updateVoteStatusByMessageId(messageId, "missing_role_track").catch((error) => {
-            log.error("Falha ao marcar votacao sem trilha no banco:", error.message);
+            log.error("Falha ao marcar votacao sem posicao no banco:", error.message);
         });
         removePendingPoll(messageId);
         return "missing_role_track";
@@ -289,7 +289,7 @@ async function resolvePollOutcome(client, channel, messageId, pendingPoll, yesVo
     }
 
     if (roleTracks.length > 1) {
-        log.warn(`Votacao ${messageId} sera resolvida para multiplas trilhas: ${roleTracks.join(", ")}`);
+        log.warn(`Votacao ${messageId} sera resolvida para multiplas posicoes: ${roleTracks.join(", ")}`);
     }
 
     let status = "tied";

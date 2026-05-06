@@ -5,6 +5,8 @@ const {
     getVoteByUserAndThreshold,
 } = require("../database/create");
 const { openPoll } = require("./polls");
+const { getPlayerRoleGameCounts } = require("./neatqueue");
+const { getRoleTrackLabel, getRoleTrackStatsKey } = require("../utils/roleTracks");
 const log = require("./logger");
 
 let commandHandlerRegistered = false;
@@ -15,14 +17,13 @@ async function getPollChannel(client) {
 }
 
 function canManageVotes(interaction) {
-    return interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
-        || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
+    return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
 
 async function handleOpenVoteCommand(interaction) {
     if (!canManageVotes(interaction)) {
         await interaction.reply({
-            content: "Voce nao tem permissao para abrir votacoes.",
+            content: "Somente administradores podem abrir votacoes.",
             ephemeral: true,
         });
         return;
@@ -31,10 +32,15 @@ async function handleOpenVoteCommand(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
     const user = interaction.options.getUser("jogador", true);
-    const roleTrack = interaction.options.getString("trilha", true);
+    const roleTrack = interaction.options.getString("posicao")
+        ?? interaction.options.getString("trilha");
     const force = interaction.options.getBoolean("forcar") ?? false;
     const thresholdGames = config.POLL_THRESHOLD_GAMES;
-    const roleGames = interaction.options.getInteger("partidas") ?? thresholdGames;
+
+    if (!roleTrack) {
+        await interaction.editReply("Informe a posicao da votacao.");
+        return;
+    }
 
     if (user.bot) {
         await interaction.editReply("Nao da para abrir votacao para bot.");
@@ -53,11 +59,28 @@ async function handleOpenVoteCommand(interaction) {
         const existingVote = await getVoteByUserAndThreshold(user.id, thresholdGames, roleTrack);
         if (existingVote) {
             await interaction.editReply(
-                `Ja existe uma votacao registrada para ${user} nessa trilha com status **${existingVote.status}**. Use \`forcar:true\` para reabrir mesmo assim.`
+                `Ja existe uma votacao registrada para ${user} nessa posicao com status **${existingVote.status}**. Use \`forcar:true\` para reabrir mesmo assim.`
             );
             return;
         }
     }
+
+    const roleGameCounts = await getPlayerRoleGameCounts(user.id);
+    if (!roleGameCounts) {
+        await interaction.editReply(`Nao consegui consultar as partidas por posicao de ${user} na NeatQueue.`);
+        return;
+    }
+
+    if (roleGameCounts.missing) {
+        await interaction.editReply(
+            `${user} tem ${roleGameCounts.missing} partida(s) sem posicao no historico da NeatQueue. Corrija isso antes de abrir a votacao para eu nao mostrar uma contagem errada.`
+        );
+        return;
+    }
+
+    const roleLabel = getRoleTrackLabel(roleTrack);
+    const statsKey = getRoleTrackStatsKey(roleTrack);
+    const roleGames = Number(roleGameCounts[statsKey] || 0);
 
     const pollChannel = await getPollChannel(interaction.client);
     if (!pollChannel?.isTextBased()) {
@@ -89,9 +112,9 @@ async function handleOpenVoteCommand(interaction) {
     });
 
     await interaction.editReply(
-        `Votacao privada aberta para ${user} no canal <#${pollChannel.id}>. Mensagem: ${pollMessage.url}`
+        `Votacao privada aberta para ${user} como **${roleLabel}** com **${roleGames}/${thresholdGames}** partidas. Canal: <#${pollChannel.id}>. Mensagem: ${pollMessage.url}`
     );
-    log.poll(`Votacao aberta por comando para ${member.user.tag} (${roleTrack}) por ${interaction.user.tag}.`);
+    log.poll(`Votacao aberta por comando para ${member.user.tag} (${roleTrack}: ${roleGames}/${thresholdGames}) por ${interaction.user.tag}.`);
 }
 
 function registerCommandHandler(client) {

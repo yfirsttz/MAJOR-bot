@@ -69,12 +69,12 @@ async function checkPlayers(client, guild, channel) {
 
             if (testRoleTracks.length > roleTracks.length) {
                 log.warn(
-                    `${member.user.tag} ja possui cargo aprovado para: ${approvedRoleTracks.join(", ")}. Ignorando trilha(s) de teste duplicada(s).`
+                    `${member.user.tag} ja possui cargo aprovado para: ${approvedRoleTracks.join(", ")}. Ignorando posicao(oes) de teste duplicada(s).`
                 );
             }
 
             if (roleTracks.length > 1) {
-                log.warn(`${member.user.tag} esta em multiplas trilhas de teste pendentes: ${roleTracks.join(", ")}`);
+                log.warn(`${member.user.tag} esta em multiplas posicoes de teste pendentes: ${roleTracks.join(", ")}`);
             }
 
             log.info(

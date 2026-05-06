@@ -37,7 +37,7 @@ function buildPollMessage(member, options = {}) {
     const roleTracks = normalizeRoleTracks(options.roleTracks);
     const labels = roleTracks.map(getRoleTrackLabel);
     const trackText = labels.length ? ` como **${labels.join(" / ")}**` : "";
-    const gamesText = options.roleGames
+    const gamesText = options.roleGames != null
         ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
         : config.POLL_THRESHOLD_GAMES;
 
@@ -68,8 +68,8 @@ function buildPrivatePollStaffMessage(member, options = {}) {
 function buildPrivatePollStaffPayload(member, options = {}) {
     const roleTracks = normalizeRoleTracks(options.roleTracks);
     const labels = roleTracks.map(getRoleTrackLabel);
-    const trackText = labels.join(" / ") || "Aprovado";
-    const gamesText = options.roleGames
+    const positionText = labels.join(" / ") || "Aprovado";
+    const gamesText = options.roleGames != null
         ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
         : config.POLL_THRESHOLD_GAMES;
     const yesVotes = options.yesVotes ?? 0;
@@ -96,7 +96,7 @@ function buildPrivatePollStaffPayload(member, options = {}) {
         .setDescription(`${memberMention} finalizou a fase de teste. Vote no privado do bot.`)
         .addFields(
             { name: "Jogador", value: `${memberMention}\n${memberName}`, inline: true },
-            { name: "Trilha", value: trackText, inline: true },
+            { name: "Posicao", value: positionText, inline: true },
             { name: "Partidas", value: String(gamesText), inline: true },
             { name: "Placar", value: `Sim: **${yesVotes}**\nNao: **${noVotes}**\nTotal: **${totalVotes}**`, inline: true },
             { name: "DMs", value: `Enviadas: **${sentCount}**\nFalhas: **${failedCount}**`, inline: true },
@@ -127,8 +127,8 @@ function buildPrivatePollDm(member, options = {}) {
 function buildPrivatePollDmPayload(member, options = {}) {
     const roleTracks = normalizeRoleTracks(options.roleTracks);
     const labels = roleTracks.map(getRoleTrackLabel);
-    const trackText = labels.join(" / ") || "Aprovado";
-    const gamesText = options.roleGames
+    const positionText = labels.join(" / ") || "Aprovado";
+    const gamesText = options.roleGames != null
         ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
         : config.POLL_THRESHOLD_GAMES;
     const selectedVote = options.selectedVote || null;
@@ -143,7 +143,7 @@ function buildPrivatePollDmPayload(member, options = {}) {
         .setDescription(`${memberMention} chegou a **${gamesText} partidas** e finalizou a fase de teste.`)
         .addFields(
             { name: "Jogador", value: `${memberMention}\n${memberName}`, inline: true },
-            { name: "Trilha", value: trackText, inline: true },
+            { name: "Posicao", value: positionText, inline: true },
             { name: "Seu voto", value: selectedText, inline: true }
         )
         .setFooter({ text: "Seu voto e privado. Voce pode mudar ate a votacao encerrar." })

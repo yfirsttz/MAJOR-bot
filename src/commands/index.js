@@ -7,7 +7,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("votacao")
         .setDescription("Gerencia votacoes privadas de aprovacao.")
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand((subcommand) =>
             subcommand
                 .setName("abrir")
@@ -20,25 +20,18 @@ const commands = [
                 )
                 .addStringOption((option) =>
                     option
-                        .setName("trilha")
-                        .setDescription("Cargo/trilha de aprovacao.")
+                        .setName("posicao")
+                        .setDescription("Posicao de aprovacao.")
                         .setRequired(true)
                         .addChoices(
                             { name: "LINHA", value: "major" },
                             { name: "GK", value: "gkmajor" }
                         )
                 )
-                .addIntegerOption((option) =>
-                    option
-                        .setName("partidas")
-                        .setDescription("Numero de partidas exibido na votacao.")
-                        .setMinValue(1)
-                        .setRequired(false)
-                )
                 .addBooleanOption((option) =>
                     option
                         .setName("forcar")
-                        .setDescription("Reabre mesmo se ja existir votacao registrada para essa trilha.")
+                        .setDescription("Reabre mesmo se ja existir votacao registrada para essa posicao.")
                         .setRequired(false)
                 )
         )
