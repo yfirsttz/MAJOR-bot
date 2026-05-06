@@ -53,15 +53,17 @@ function messageMatchesActiveQueue(text) {
 
 function parseRoleCount(text, labels) {
     const labelPattern = labels.join("|");
+    const normalizedLabels = new Set(labels.map((label) => String(label).toUpperCase()));
     const lines = String(text || "")
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean);
-    const labelRegex = new RegExp(`(?:^|\\b)(?:${labelPattern})(?:\\b|$)`, "i");
+    const boundary = "[^A-Z0-9]";
+    const labelRegex = new RegExp(`(?:^|${boundary})(?:[_*~\\s]*)(?:${labelPattern})(?:[_*~\\s]*)(?=${boundary}|$)`, "i");
     const countRegex = /(\d+)\s*\/\s*(\d+)/;
     const inlinePatterns = [
-        new RegExp(`(?:^|\\b)(?:${labelPattern})(?:\\b|$)[^\\d\\n\\r]*(\\d+)\\s*\\/\\s*(\\d+)`, "i"),
-        new RegExp(`(?:^|\\b)(\\d+)\\s*\\/\\s*(\\d+)[^\\w\\n\\r]*(?:${labelPattern})(?:\\b|$)`, "i"),
+        new RegExp(`(?:^|${boundary})[_*~\\s]*(?:${labelPattern})[_*~\\s]*[:\\-]?\\s*(\\d+)\\s*\\/\\s*(\\d+)`, "i"),
+        new RegExp(`(?:^|${boundary})(\\d+)\\s*\\/\\s*(\\d+)[_*~\\s]*(?:${labelPattern})(?:[_*~\\s]*)(?=${boundary}|$)`, "i"),
     ];
 
     for (let index = 0; index < lines.length; index += 1) {
@@ -79,7 +81,8 @@ function parseRoleCount(text, labels) {
             };
         }
 
-        if (labelRegex.test(line)) {
+        const bareLabel = line.replace(/[_*~:.\-\s]/g, "").toUpperCase();
+        if (labelRegex.test(line) && normalizedLabels.has(bareLabel)) {
             const nextLineMatch = lines[index + 1]?.match(countRegex);
             if (nextLineMatch) {
                 return {
