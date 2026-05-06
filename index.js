@@ -14,7 +14,7 @@ const { checkAutoForceStartTimer } = require("./src/services/forceStart");
 const { evaluateSmartPing } = require("./src/services/rolePing");
 const { registerQueueWatcher, evaluateLatestQueueMessage } = require("./src/services/queueWatcher");
 const { registerResultAuditWatcher } = require("./src/services/resultAudit");
-const { checkAllPendingPolls, restorePendingPolls } = require("./src/services/polls");
+const { checkAllPendingPolls, restorePendingPolls, registerPollInteractionHandler } = require("./src/services/polls");
 const { checkPlayers } = require("./src/services/playerWatcher");
 
 const PLAYER_CHECK_INTERVAL_MS = 60_000;
@@ -35,6 +35,7 @@ module.exports = { client };
 
 registerResultAuditWatcher(client);
 registerQueueWatcher(client);
+registerPollInteractionHandler(client);
 startWebhookServer(client);
 setInterval(() => {
     void checkAutoForceStartTimer(client);

@@ -45,6 +45,42 @@ function buildPollMessage(member, options = {}) {
     };
 }
 
+function buildPrivatePollStaffMessage(member, options = {}) {
+    const roleTracks = normalizeRoleTracks(options.roleTracks);
+    const labels = roleTracks.map(getRoleTrackLabel);
+    const trackText = labels.length ? ` como ${labels.join(" / ")}` : "";
+    const gamesText = options.roleGames
+        ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
+        : config.POLL_THRESHOLD_GAMES;
+    const yesVotes = options.yesVotes ?? 0;
+    const noVotes = options.noVotes ?? 0;
+    const totalVotes = yesVotes + noVotes;
+    const sentCount = options.sentCount ?? 0;
+    const failedCount = options.failedCount ?? 0;
+
+    return [
+        `# Votacao privada - ${member} chegou a **${gamesText} partidas${trackText}**`,
+        `Votos: **Sim ${yesVotes}** | **Nao ${noVotes}** | Total: **${totalVotes}**`,
+        `DMs enviadas: **${sentCount}** | Falhas: **${failedCount}**`,
+        `Encerra em: <t:${Math.floor((options.endsAt || Date.now()) / 1_000)}:R>`,
+    ].join("\n");
+}
+
+function buildPrivatePollDm(member, options = {}) {
+    const roleTracks = normalizeRoleTracks(options.roleTracks);
+    const labels = roleTracks.map(getRoleTrackLabel);
+    const trackText = labels.length ? ` como ${labels.join(" / ")}` : "";
+    const gamesText = options.roleGames
+        ? `${options.roleGames}/${options.thresholdGames || config.POLL_THRESHOLD_GAMES}`
+        : config.POLL_THRESHOLD_GAMES;
+
+    return [
+        `Votacao de aprovacao - ${member.user.username}`,
+        `${member} chegou a **${gamesText} partidas${trackText}** e finalizou a fase de teste.`,
+        "Seu voto e privado. Escolha uma opcao abaixo.",
+    ].join("\n");
+}
+
 function buildSmartPingMessage(_queueSnapshot, roleIds) {
     const mentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
 
@@ -70,6 +106,8 @@ function buildResultAuditDm(data) {
 const messages = {
     startup,
     buildPollMessage,
+    buildPrivatePollDm,
+    buildPrivatePollStaffMessage,
     buildSmartPingMessage,
     buildResultAuditDm,
     pollApproved: (member) =>
