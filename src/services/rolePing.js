@@ -5,7 +5,7 @@ const messages = require("../ui/messages");
 const log = require("./logger");
 
 const STATE_FILE = "smart_ping_state";
-const FETCH_LIMIT = 25;
+const FETCH_LIMIT = 100;
 const RETRY_DELAY_MS = 1_000;
 const MAX_RETRIES = 3;
 
@@ -47,26 +47,47 @@ function messageMatchesActiveQueue(text) {
 
     const normalizedText = String(text || "").toLowerCase();
     return normalizedText.includes(config.QUEUE_NAME.toLowerCase())
-        || (/\b(gk|goleiro|goalkeeper)\b/i.test(normalizedText) && /\b(linha|line)\b/i.test(normalizedText));
+        || (/\b(gk|goleiro|goleiros|goalkeeper|goalkeepers)\b/i.test(normalizedText)
+            && /\b(linha|linhas|line)\b/i.test(normalizedText));
 }
 
 function parseRoleCount(text, labels) {
     const labelPattern = labels.join("|");
-    const patterns = [
-        new RegExp(`(?:^|\\b)(?:${labelPattern})\\s*[:\\-]?\\s*(\\d+)\\s*\\/\\s*(\\d+)`, "i"),
-        new RegExp(`(?:^|\\b)(\\d+)\\s*\\/\\s*(\\d+)\\s*(?:${labelPattern})(?:\\b|$)`, "i"),
+    const lines = String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const labelRegex = new RegExp(`(?:^|\\b)(?:${labelPattern})(?:\\b|$)`, "i");
+    const countRegex = /(\d+)\s*\/\s*(\d+)/;
+    const inlinePatterns = [
+        new RegExp(`(?:^|\\b)(?:${labelPattern})(?:\\b|$)[^\\d\\n\\r]*(\\d+)\\s*\\/\\s*(\\d+)`, "i"),
+        new RegExp(`(?:^|\\b)(\\d+)\\s*\\/\\s*(\\d+)[^\\w\\n\\r]*(?:${labelPattern})(?:\\b|$)`, "i"),
     ];
 
-    for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (!match) {
-            continue;
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+
+        for (const pattern of inlinePatterns) {
+            const match = line.match(pattern);
+            if (!match) {
+                continue;
+            }
+
+            return {
+                count: Number(match[1]),
+                slots: Number(match[2]),
+            };
         }
 
-        return {
-            count: Number(match[1]),
-            slots: Number(match[2]),
-        };
+        if (labelRegex.test(line)) {
+            const nextLineMatch = lines[index + 1]?.match(countRegex);
+            if (nextLineMatch) {
+                return {
+                    count: Number(nextLineMatch[1]),
+                    slots: Number(nextLineMatch[2]),
+                };
+            }
+        }
     }
 
     return null;
@@ -82,8 +103,8 @@ function parseQueueSnapshot(message) {
         return null;
     }
 
-    const gkMatch = parseRoleCount(text, ["GK", "GOLEIRO", "GOALKEEPER"]);
-    const lineMatch = parseRoleCount(text, ["LINHA", "LINE"]);
+    const gkMatch = parseRoleCount(text, ["GK", "GOLEIRO", "GOLEIROS", "GOALKEEPER", "GOALKEEPERS"]);
+    const lineMatch = parseRoleCount(text, ["LINHA", "LINHAS", "LINE"]);
 
     if (!gkMatch || !lineMatch) {
         return null;
@@ -202,7 +223,7 @@ async function evaluateSmartPing(client, options = {}) {
 
     const expectedTotalPlayers = options.expectedTotalPlayers ?? null;
     const payloadSnapshot = buildQueueSnapshotFromPayload(options.payload);
-    const messageSnapshot = await findLatestQueueSnapshot(client, expectedTotalPlayers);
+    const messageSnapshot = options.snapshot ?? await findLatestQueueSnapshot(client, expectedTotalPlayers);
     let snapshot = messageSnapshot;
 
     if (
@@ -271,5 +292,7 @@ async function evaluateSmartPing(client, options = {}) {
 
 module.exports = {
     evaluateSmartPing,
+    findLatestQueueSnapshot,
+    parseQueueSnapshot,
     resetSmartPingState,
 };

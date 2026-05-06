@@ -12,6 +12,7 @@ const messages = require("./src/ui/messages");
 const { startWebhookServer } = require("./src/services/webhook");
 const { checkAutoForceStartTimer } = require("./src/services/forceStart");
 const { evaluateSmartPing } = require("./src/services/rolePing");
+const { registerQueueWatcher, evaluateLatestQueueMessage } = require("./src/services/queueWatcher");
 const { registerResultAuditWatcher } = require("./src/services/resultAudit");
 const { checkAllPendingPolls, restorePendingPolls } = require("./src/services/polls");
 const { checkPlayers } = require("./src/services/playerWatcher");
@@ -33,6 +34,7 @@ const client = new Client({
 module.exports = { client };
 
 registerResultAuditWatcher(client);
+registerQueueWatcher(client);
 startWebhookServer(client);
 setInterval(() => {
     void checkAutoForceStartTimer(client);
@@ -79,6 +81,7 @@ client.once("clientReady", async () => {
 
         await restorePendingPolls(client);
         await evaluateSmartPing(client, { reason: "startup" });
+        await evaluateLatestQueueMessage(client, "startup-queue-watch");
         await checkPlayers(client, guild, channel);
 
         setInterval(() => {
