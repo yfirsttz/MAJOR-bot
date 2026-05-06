@@ -111,11 +111,6 @@ function getPrivateVoteCounts(pendingPoll) {
     );
 }
 
-function formatDmVoteContent(content, vote) {
-    const cleanContent = String(content || "").replace(/\n\nSeu voto atual: .+$/s, "");
-    return `${cleanContent}\n\nSeu voto atual: **${vote === "yes" ? "Sim" : "Nao"}**`;
-}
-
 async function getPollChannel(client, channelId) {
     return client.channels.cache.get(channelId)
         ?? (await client.channels.fetch(channelId).catch(() => null));
@@ -159,8 +154,7 @@ async function updatePrivatePollStaffMessage(client, messageId, memberOverride =
     const displayMember = member || `<@${pendingPoll.memberId}>`;
     const { yesVotes, noVotes } = getPrivateVoteCounts(pendingPoll);
 
-    await staffMessage.edit({
-        content: messages.buildPrivatePollStaffMessage(displayMember, {
+    await staffMessage.edit(messages.buildPrivatePollStaffPayload(displayMember, {
             roleTracks: pendingPoll.roleTracks,
             thresholdGames: pendingPoll.thresholdGames,
             roleGames: pendingPoll.roleGames,
@@ -169,8 +163,7 @@ async function updatePrivatePollStaffMessage(client, messageId, memberOverride =
             sentCount: pendingPoll.dmSentCount,
             failedCount: pendingPoll.dmFailedCount,
             endsAt: pendingPoll.endsAt,
-        }),
-    }).catch((error) => {
+        })).catch((error) => {
         log.warn(`Falha ao atualizar placar da votacao ${messageId}:`, error.message);
     });
 
@@ -181,7 +174,7 @@ async function sendPrivatePollDms(client, messageId, member, voterIds, options) 
     let sentCount = 0;
     let failedCount = 0;
     const deliveredVoters = [];
-    const content = messages.buildPrivatePollDm(member, options);
+    const payload = messages.buildPrivatePollDmPayload(member, options);
     const components = buildPrivatePollButtons(messageId);
 
     for (const voterId of voterIds) {
@@ -191,7 +184,7 @@ async function sendPrivatePollDms(client, messageId, member, voterIds, options) 
             continue;
         }
 
-        const dmMessage = await user.send({ content, components }).catch((error) => {
+        const dmMessage = await user.send({ ...payload, components }).catch((error) => {
             log.warn(`Nao foi possivel enviar DM de votacao para ${voterId}:`, error.message);
             return null;
         });
@@ -223,10 +216,7 @@ async function openPoll(channel, member, options = {}) {
     };
 
     try {
-        const message = await channel.send({
-            content: messages.buildPrivatePollStaffMessage(member, pollOptions),
-            allowedMentions: { parse: ["everyone", "users"] },
-        });
+        const message = await channel.send(messages.buildPrivatePollStaffPayload(member, pollOptions));
         pendingPolls[message.id] = {
             mode: "dm",
             memberId: member.id,
@@ -425,7 +415,16 @@ async function finalizePrivatePoll(client, channel, messageId, pendingPoll) {
 
     if (staffMessage) {
         await staffMessage.edit({
-            content: `${staffMessage.content}\n\nEncerrada com status: **${status}**.`,
+            ...messages.buildPrivatePollStaffPayload(
+                pendingPoll.memberId ? `<@${pendingPoll.memberId}>` : "Jogador",
+                {
+                    ...pendingPoll,
+                    ...getPrivateVoteCounts(pendingPoll),
+                    sentCount: pendingPoll.dmSentCount,
+                    failedCount: pendingPoll.dmFailedCount,
+                    status,
+                }
+            ),
             components: [],
         }).catch(() => null);
     }
@@ -522,8 +521,18 @@ function registerPollInteractionHandler(client) {
         savePendingPolls();
 
         await updatePrivatePollStaffMessage(client, parsed.messageId);
+        const guild = await getGuild(client);
+        const member = pendingPoll.memberId
+            ? await guild?.members.fetch(pendingPoll.memberId).catch(() => null)
+            : null;
+        const displayMember = member || `<@${pendingPoll.memberId}>`;
         await interaction.update({
-            content: formatDmVoteContent(interaction.message.content, parsed.vote),
+            ...messages.buildPrivatePollDmPayload(displayMember, {
+                roleTracks: pendingPoll.roleTracks,
+                thresholdGames: pendingPoll.thresholdGames,
+                roleGames: pendingPoll.roleGames,
+                selectedVote: parsed.vote,
+            }),
             components: buildPrivatePollButtons(parsed.messageId),
         }).catch(async () => {
             await interaction.reply({
