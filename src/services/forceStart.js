@@ -19,6 +19,18 @@ let state = {
 
 let lastNotificationMessageId = null;
 
+function normalizeQueueName(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function getPayloadQueueName(payload) {
+    if (typeof payload?.queue === "string" || typeof payload?.queue === "number") {
+        return payload.queue;
+    }
+
+    return payload?.queue?.name ?? payload?.queue_name ?? payload?.data?.queue ?? "";
+}
+
 function saveState() {
     saveJson(STATE_FILE, state);
 }
@@ -28,17 +40,24 @@ function isTargetQueue(payload) {
         return false;
     }
 
-    if (payload.guild && payload.guild !== config.SERVER_ID) {
+    const receivedGuild = String(payload.guild || "").trim();
+    const receivedChannel = String(payload.channel || "").trim();
+
+    if (receivedGuild && receivedGuild !== config.SERVER_ID) {
         return false;
     }
 
-    if (payload.channel && payload.channel !== config.QUEUE_CHANNEL_ID) {
+    if (receivedChannel && receivedChannel !== config.QUEUE_CHANNEL_ID) {
         return false;
+    }
+
+    if (receivedChannel && receivedChannel === config.QUEUE_CHANNEL_ID) {
+        return true;
     }
 
     if (config.QUEUE_NAME) {
-        const expectedQueue = config.QUEUE_NAME.toLowerCase();
-        const receivedQueue = String(payload.queue || "").trim().toLowerCase();
+        const expectedQueue = normalizeQueueName(config.QUEUE_NAME);
+        const receivedQueue = normalizeQueueName(getPayloadQueueName(payload));
 
         if (receivedQueue && receivedQueue !== expectedQueue) {
             return false;

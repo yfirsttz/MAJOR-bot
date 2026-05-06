@@ -6,7 +6,7 @@ const {
     isTargetQueue,
 } = require("./forceStart");
 const { evaluateSmartPing, resetSmartPingState } = require("./rolePing");
-const { getPayloadPlayers } = require("../utils/queuePayload");
+const { getPayloadPlayerCount } = require("../utils/queuePayload");
 const log = require("./logger");
 
 let serverInstance = null;
@@ -100,7 +100,7 @@ function startWebhookServer(client) {
                 }
 
                 const action = payload.action;
-                const totalPlayers = getPayloadPlayers(payload).length;
+                const totalPlayers = getPayloadPlayerCount(payload);
 
                 if (action === "JOIN_QUEUE" || action === "LEAVE_QUEUE") {
                     log.queue(`${action} recebido com ${totalPlayers} player(s).`);

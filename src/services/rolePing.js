@@ -45,7 +45,31 @@ function messageMatchesActiveQueue(text) {
         return true;
     }
 
-    return String(text || "").toLowerCase().includes(config.QUEUE_NAME.toLowerCase());
+    const normalizedText = String(text || "").toLowerCase();
+    return normalizedText.includes(config.QUEUE_NAME.toLowerCase())
+        || (/\b(gk|goleiro|goalkeeper)\b/i.test(normalizedText) && /\b(linha|line)\b/i.test(normalizedText));
+}
+
+function parseRoleCount(text, labels) {
+    const labelPattern = labels.join("|");
+    const patterns = [
+        new RegExp(`(?:^|\\b)(?:${labelPattern})\\s*[:\\-]?\\s*(\\d+)\\s*\\/\\s*(\\d+)`, "i"),
+        new RegExp(`(?:^|\\b)(\\d+)\\s*\\/\\s*(\\d+)\\s*(?:${labelPattern})(?:\\b|$)`, "i"),
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (!match) {
+            continue;
+        }
+
+        return {
+            count: Number(match[1]),
+            slots: Number(match[2]),
+        };
+    }
+
+    return null;
 }
 
 function parseQueueSnapshot(message) {
@@ -58,17 +82,17 @@ function parseQueueSnapshot(message) {
         return null;
     }
 
-    const gkMatch = text.match(/GK\s+(\d+)\s*\/\s*(\d+)/i);
-    const lineMatch = text.match(/LINHA\s+(\d+)\s*\/\s*(\d+)/i);
+    const gkMatch = parseRoleCount(text, ["GK", "GOLEIRO", "GOALKEEPER"]);
+    const lineMatch = parseRoleCount(text, ["LINHA", "LINE"]);
 
     if (!gkMatch || !lineMatch) {
         return null;
     }
 
-    const gkCount = Number(gkMatch[1]);
-    const gkSlots = Number(gkMatch[2]);
-    const lineCount = Number(lineMatch[1]);
-    const lineSlots = Number(lineMatch[2]);
+    const gkCount = gkMatch.count;
+    const gkSlots = gkMatch.slots;
+    const lineCount = lineMatch.count;
+    const lineSlots = lineMatch.slots;
 
     if ([gkCount, gkSlots, lineCount, lineSlots].some((value) => Number.isNaN(value))) {
         return null;
