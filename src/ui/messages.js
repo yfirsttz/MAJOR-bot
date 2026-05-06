@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require("discord.js");
 const config = require("../utils/config");
+const { getSmartPingCooldownSeconds } = require("../utils/smartPingSettings");
 const { formatDurationMs } = require("../utils/time");
 const { getRoleTrackLabel, normalizeRoleTracks } = require("../utils/roleTracks");
 
@@ -23,7 +24,7 @@ function startup() {
     }
 
     if (config.SMART_PING_ENABLED) {
-        text += `\nSmart ping ativo: alerta a partir de ${config.SMART_PING_MIN_PLAYERS} player(s) com cooldown de ${config.SMART_PING_COOLDOWN_SECONDS}s.`;
+        text += `\nSmart ping ativo: alerta a partir de ${config.SMART_PING_MIN_PLAYERS} player(s) com cooldown de ${getSmartPingCooldownSeconds()}s.`;
     }
 
     if (config.RESULT_AUDIT_ENABLED) {

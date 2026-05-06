@@ -5,6 +5,12 @@ const {
     getVoteByUserAndThreshold,
 } = require("../database/create");
 const { openPoll } = require("./polls");
+const {
+    getDefaultSmartPingCooldownSeconds,
+    getSmartPingCooldownSeconds,
+    resetSmartPingCooldownSeconds,
+    setSmartPingCooldownSeconds,
+} = require("../utils/smartPingSettings");
 const { getPlayerRoleGameCounts } = require("./neatqueue");
 const { getRoleTrackLabel, getRoleTrackStatsKey } = require("../utils/roleTracks");
 const log = require("./logger");
@@ -17,6 +23,10 @@ async function getPollChannel(client) {
 }
 
 function canManageVotes(interaction) {
+    return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
+}
+
+function canManageSmartPing(interaction) {
     return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
 
@@ -117,6 +127,47 @@ async function handleOpenVoteCommand(interaction) {
     log.poll(`Votacao aberta por comando para ${member.user.tag} (${roleTrack}: ${roleGames}/${thresholdGames}) por ${interaction.user.tag}.`);
 }
 
+async function handleSmartPingCommand(interaction) {
+    if (!canManageSmartPing(interaction)) {
+        await interaction.reply({
+            content: "Somente administradores podem alterar o smart ping.",
+            ephemeral: true,
+        });
+        return;
+    }
+
+    const subcommand = interaction.options.getSubcommand();
+
+    if (subcommand === "cooldown") {
+        const seconds = interaction.options.getInteger("segundos");
+
+        if (seconds == null) {
+            await interaction.reply({
+                content: `Cooldown atual do smart ping: **${getSmartPingCooldownSeconds()}s**.`,
+                ephemeral: true,
+            });
+            return;
+        }
+
+        const updatedSeconds = setSmartPingCooldownSeconds(seconds);
+        await interaction.reply({
+            content: `Cooldown do smart ping atualizado para **${updatedSeconds}s**.`,
+            ephemeral: true,
+        });
+        log.info(`Cooldown do smart ping alterado para ${updatedSeconds}s por ${interaction.user.tag}.`);
+        return;
+    }
+
+    if (subcommand === "resetar-cooldown") {
+        const updatedSeconds = resetSmartPingCooldownSeconds();
+        await interaction.reply({
+            content: `Cooldown do smart ping resetado para **${updatedSeconds}s** (padrao do .env: ${getDefaultSmartPingCooldownSeconds()}s).`,
+            ephemeral: true,
+        });
+        log.info(`Cooldown do smart ping resetado para ${updatedSeconds}s por ${interaction.user.tag}.`);
+    }
+}
+
 function registerCommandHandler(client) {
     if (commandHandlerRegistered) {
         return;
@@ -135,6 +186,11 @@ function registerCommandHandler(client) {
                 if (subcommand === "abrir") {
                     await handleOpenVoteCommand(interaction);
                 }
+                return;
+            }
+
+            if (interaction.commandName === "smartping") {
+                await handleSmartPingCommand(interaction);
             }
         } catch (error) {
             log.error("Erro ao executar comando:", error.stack || error.message || error);

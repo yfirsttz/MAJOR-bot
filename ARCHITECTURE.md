@@ -65,6 +65,7 @@ O runtime usa:
 |       |-- config.js
 |       |-- jsonStore.js
 |       |-- roleTracks.js
+|       |-- smartPingSettings.js
 |       `-- time.js
 |-- data/
 `-- backups/
@@ -159,14 +160,22 @@ O smart ping nao usa mais intervalo fixo. Ele reage a eventos da fila e ao start
    - `ROLES_TEST_MAJOR`
    - `ROLES_GKMAJOR`
    - `ROLES_TEST_GKMAJOR`
-8. Aplicar cooldown com `SMART_PING_COOLDOWN_SECONDS`
+8. Apagar o ping anterior enviado pelo bot, quando existir
+9. Aplicar cooldown com `SMART_PING_COOLDOWN_SECONDS` ou com o valor salvo em runtime
 
 Estado salvo:
 
 - `lastPingAt`
+- `lastPingMessageId`
+- `lastPingChannelId`
 - `lastParsedMessageId`
 - `lastSignature`
 - `qualified`
+
+Configuracao salva:
+
+- `smart_ping_settings_<profile>_<serverId>.json`
+- `cooldownSeconds`
 
 ```mermaid
 flowchart TD
@@ -268,6 +277,7 @@ Arquivos por perfil/servidor:
 - `pending_polls_<profile>_<serverId>.json`
 - `queue_watch_state_<profile>_<serverId>.json`
 - `smart_ping_state_<profile>_<serverId>.json`
+- `smart_ping_settings_<profile>_<serverId>.json`
 - `results_alert_state_<profile>_<serverId>.json`
 
 Migracao legada:

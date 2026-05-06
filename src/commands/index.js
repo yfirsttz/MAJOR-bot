@@ -36,6 +36,28 @@ const commands = [
                 )
         )
         .toJSON(),
+    new SlashCommandBuilder()
+        .setName("smartping")
+        .setDescription("Gerencia configuracoes do smart ping.")
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName("cooldown")
+                .setDescription("Mostra ou altera o cooldown do ping.")
+                .addIntegerOption((option) =>
+                    option
+                        .setName("segundos")
+                        .setDescription("Novo cooldown em segundos.")
+                        .setMinValue(1)
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName("resetar-cooldown")
+                .setDescription("Volta o cooldown para o valor configurado no .env.")
+        )
+        .toJSON(),
 ];
 
 module.exports = commands;

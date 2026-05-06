@@ -1,4 +1,8 @@
 const config = require("../utils/config");
+const {
+    getSmartPingCooldownMs,
+    getSmartPingCooldownSeconds,
+} = require("../utils/smartPingSettings");
 const { readJson, saveJson } = require("../utils/jsonStore");
 const { buildQueueSnapshotFromPayload } = require("../utils/queuePayload");
 const messages = require("../ui/messages");
@@ -12,6 +16,8 @@ const MAX_RETRIES = 3;
 let state = {
     qualified: false,
     lastPingAt: null,
+    lastPingMessageId: null,
+    lastPingChannelId: null,
     lastParsedMessageId: null,
     lastSignature: null,
     lastObservedQueue: null,
@@ -20,6 +26,12 @@ let state = {
 
 function saveState() {
     saveJson(STATE_FILE, state);
+}
+
+function clearLastPingMessageReference() {
+    state.lastPingMessageId = null;
+    state.lastPingChannelId = null;
+    saveState();
 }
 
 function wait(ms) {
@@ -139,6 +151,41 @@ async function getQueueChannel(client) {
         ?? (await client.channels.fetch(config.QUEUE_CHANNEL_ID).catch(() => null));
 }
 
+async function deletePreviousSmartPing(client, currentChannel) {
+    if (!state.lastPingMessageId) {
+        return;
+    }
+
+    const channelId = state.lastPingChannelId || currentChannel.id;
+    const channel = channelId === currentChannel.id
+        ? currentChannel
+        : await client.channels.fetch(channelId).catch(() => null);
+
+    if (!channel?.isTextBased()) {
+        log.warn(`Nao foi possivel apagar smart ping anterior; canal indisponivel: ${channelId}`);
+        return;
+    }
+
+    const previousMessage = await channel.messages.fetch(state.lastPingMessageId).catch(() => null);
+    if (!previousMessage) {
+        log.info(`Smart ping anterior nao encontrado para apagar: ${state.lastPingMessageId}`);
+        clearLastPingMessageReference();
+        return;
+    }
+
+    if (previousMessage.author?.id !== client.user?.id) {
+        log.warn(`Smart ping anterior ${state.lastPingMessageId} nao pertence ao bot; mantendo mensagem.`);
+        return;
+    }
+
+    await previousMessage.delete().then(() => {
+        log.info(`Smart ping anterior apagado: ${previousMessage.id}`);
+        clearLastPingMessageReference();
+    }).catch((error) => {
+        log.warn("Falha ao apagar smart ping anterior:", error.message);
+    });
+}
+
 async function findLatestQueueSnapshot(client, expectedTotalPlayers = null) {
     const channel = await getQueueChannel(client);
     if (!channel || !channel.isTextBased()) {
@@ -193,6 +240,8 @@ async function sendSmartPing(client, queueSnapshot, roleIds) {
         log.warn("Nao foi possivel enviar smart ping; canal da fila indisponivel.");
         return null;
     }
+
+    await deletePreviousSmartPing(client, channel);
 
     const payload = messages.buildSmartPingMessage(queueSnapshot, roleIds);
     return channel.send(payload).catch((error) => {
@@ -258,17 +307,18 @@ async function evaluateSmartPing(client, options = {}) {
 
     const targetRoleIds = getTargetRoleIds(snapshot);
     const signature = `${snapshot.gkCount}:${snapshot.lineCount}:${targetRoleIds.join(",")}`;
+    const cooldownMs = getSmartPingCooldownMs();
     const cooldownActive =
         state.qualified &&
         state.lastPingAt != null &&
-        Date.now() - state.lastPingAt < config.SMART_PING_COOLDOWN_MS;
+        Date.now() - state.lastPingAt < cooldownMs;
 
     if (state.qualified && cooldownActive) {
         state.lastParsedMessageId = snapshot.messageId;
         state.lastSignature = signature;
         saveState();
         log.info(
-            `Smart ping em cooldown (${config.SMART_PING_COOLDOWN_SECONDS}s) para ${snapshot.totalPlayers}/${snapshot.totalSlots}.`
+            `Smart ping em cooldown (${getSmartPingCooldownSeconds()}s) para ${snapshot.totalPlayers}/${snapshot.totalSlots}.`
         );
         return;
     }
@@ -282,6 +332,8 @@ async function evaluateSmartPing(client, options = {}) {
         ...state,
         qualified: true,
         lastPingAt: Date.now(),
+        lastPingMessageId: sentMessage.id,
+        lastPingChannelId: sentMessage.channelId,
         lastParsedMessageId: snapshot.messageId,
         lastSignature: signature,
         lastObservedQueue: snapshot,

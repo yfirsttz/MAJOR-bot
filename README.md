@@ -92,7 +92,14 @@ O ping deixou de ser por horario fixo. Agora o bot:
 3. Se a fila tiver pelo menos `SMART_PING_MIN_PLAYERS`:
    - com goleiro presente: pinga `ROLES_MAJOR` e `ROLES_TEST_MAJOR`
    - sem goleiro: pinga `ROLES_MAJOR`, `ROLES_TEST_MAJOR`, `ROLES_GKMAJOR` e `ROLES_TEST_GKMAJOR`
-4. Respeita cooldown de `SMART_PING_COOLDOWN_SECONDS`.
+4. Apaga a ultima mensagem de ping enviada pelo bot antes de mandar uma nova.
+5. Respeita cooldown de `SMART_PING_COOLDOWN_SECONDS`, que pode ser alterado em runtime por admin.
+
+Comandos de admin:
+
+- `/smartping cooldown`: mostra o cooldown atual
+- `/smartping cooldown segundos:<valor>`: altera o cooldown em segundos
+- `/smartping resetar-cooldown`: volta ao valor padrao do `.env`
 
 ### Auditoria de resultados alterados
 
@@ -115,6 +122,7 @@ Toda mensagem editada pelo NeatQueue no `RESULTS_CHANNEL_ID` que contenha `MODIF
 ## Observacoes
 
 - `AUTO_FORCESTART_DELAY_SECONDS` e `SMART_PING_COOLDOWN_SECONDS` sao sempre em segundos.
+- Alteracoes feitas com `/smartping cooldown` ficam salvas em `data/` por perfil/servidor.
 - `STARTUP_CHANNEL_ID` e opcional; se vazio, o bot usa `CHANNEL_ID`.
 - O bot assume que os dados legados do banco pertencem ao servidor oficial e faz backfill com `OFFICIAL_SERVER_ID`.
 - Consulte `ARCHITECTURE.md` para a estrutura detalhada do projeto.
