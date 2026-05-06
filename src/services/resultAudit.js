@@ -25,11 +25,29 @@ function buildDedupKey(message) {
     return `${message.id}:${message.editedTimestamp || 0}`;
 }
 
+function getAlertUserIds() {
+    return [...new Set(String(config.RESULTS_ALERT_USER_ID || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => /^\d+$/.test(value)))];
+}
+
+function cleanMarkdown(text) {
+    return String(text || "")
+        .replace(/[_*~`]/g, "")
+        .trim();
+}
+
 function collectMessageText(message) {
     const parts = [message.content];
 
     for (const embed of message.embeds || []) {
-        parts.push(embed.title, embed.description);
+        parts.push(
+            embed.title,
+            embed.description,
+            embed.author?.name,
+            embed.footer?.text
+        );
 
         for (const field of embed.fields || []) {
             parts.push(field.name, field.value);
@@ -40,7 +58,14 @@ function collectMessageText(message) {
 }
 
 function extractModifierName(text) {
-    return text.match(/MODIFIED BY\s+([^\n\r]+)/i)?.[1]?.trim() || "Desconhecido";
+    const match = text.match(/MODIFIED BY\s+([^\n\r]+)/i);
+    if (!match) {
+        return "Desconhecido";
+    }
+
+    return cleanMarkdown(match[1])
+        .replace(/^(.+?)\s*(?:Resultados|Fila|Informacoes|Informações).*$/i, "$1")
+        .trim() || "Desconhecido";
 }
 
 function extractQueueNumber(text) {
@@ -93,13 +118,26 @@ async function materializeMessage(message) {
 }
 
 async function sendAuditDm(client, payload) {
-    try {
-        const user = await client.users.fetch(config.RESULTS_ALERT_USER_ID);
-        await user.send(messages.buildResultAuditDm(payload));
-        log.ok(`Auditoria de resultado enviada por DM para ${config.RESULTS_ALERT_USER_ID}.`);
-    } catch (error) {
-        log.warn("Falha ao enviar DM de auditoria de resultado:", error.message);
+    const userIds = getAlertUserIds();
+    if (!userIds.length) {
+        log.warn("Nenhum RESULTS_ALERT_USER_ID valido configurado para auditoria de resultado.");
+        return 0;
     }
+
+    let sentCount = 0;
+
+    for (const userId of userIds) {
+        try {
+            const user = await client.users.fetch(userId);
+            await user.send(messages.buildResultAuditDm(payload));
+            sentCount += 1;
+            log.ok(`Auditoria de resultado enviada por DM para ${userId}.`);
+        } catch (error) {
+            log.warn(`Falha ao enviar DM de auditoria de resultado para ${userId}:`, error.message);
+        }
+    }
+
+    return sentCount;
 }
 
 function registerResultAuditWatcher(client) {
@@ -137,13 +175,17 @@ function registerResultAuditWatcher(client) {
             messageUrl: message.url,
         };
 
-        state.processedKeys.push(dedupKey);
-        saveState();
-
-        await sendAuditDm(client, payload);
+        const sentCount = await sendAuditDm(client, payload);
+        if (sentCount > 0) {
+            state.processedKeys.push(dedupKey);
+            saveState();
+        }
     });
 }
 
 module.exports = {
+    collectMessageText,
+    extractModifierName,
+    getAlertUserIds,
     registerResultAuditWatcher,
 };
