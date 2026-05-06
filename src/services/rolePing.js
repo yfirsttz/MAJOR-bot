@@ -272,7 +272,10 @@ async function deleteSmartPingMessages(client, currentChannel, options = {}) {
         clearLastPingMessageReference();
     }
 
-    return deletedCount;
+    return {
+        deletedCount,
+        keptMessageId: keepMessageId,
+    };
 }
 
 async function findLatestQueueSnapshot(client, expectedTotalPlayers = null) {
@@ -404,20 +407,27 @@ async function evaluateSmartPingNow(client, options = {}) {
 
     if (state.qualified && cooldownActive) {
         const channel = await getQueueChannel(client);
+        let keptMessageId = null;
+
         if (channel?.isTextBased()) {
-            await deleteSmartPingMessages(client, channel, {
+            const cleanup = await deleteSmartPingMessages(client, channel, {
                 keepMessageId: state.lastPingMessageId,
                 keepLatest: true,
             });
+            keptMessageId = cleanup.keptMessageId;
         }
 
-        state.lastParsedMessageId = snapshot.messageId;
-        state.lastSignature = signature;
-        saveState();
-        log.info(
-            `Smart ping em cooldown (${getSmartPingCooldownSeconds()}s) para ${snapshot.totalPlayers}/${snapshot.totalSlots}.`
-        );
-        return;
+        if (keptMessageId) {
+            state.lastParsedMessageId = snapshot.messageId;
+            state.lastSignature = signature;
+            saveState();
+            log.info(
+                `Smart ping em cooldown (${getSmartPingCooldownSeconds()}s) para ${snapshot.totalPlayers}/${snapshot.totalSlots}.`
+            );
+            return;
+        }
+
+        log.warn("Smart ping em cooldown, mas nenhuma mencao viva foi encontrada; enviando reposicao unica.");
     }
 
     const sentMessage = await sendSmartPing(client, snapshot, targetRoleIds);
