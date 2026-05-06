@@ -10,8 +10,11 @@ const log = require("./logger");
 
 const STATE_FILE = "smart_ping_state";
 const FETCH_LIMIT = 100;
+const PING_CLEANUP_FETCH_LIMIT = 100;
 const RETRY_DELAY_MS = 1_000;
 const MAX_RETRIES = 3;
+
+let smartPingEvaluationQueue = Promise.resolve();
 
 let state = {
     qualified: false,
@@ -32,6 +35,37 @@ function clearLastPingMessageReference() {
     state.lastPingMessageId = null;
     state.lastPingChannelId = null;
     saveState();
+}
+
+function getConfiguredSmartPingRoleIds() {
+    return new Set([
+        ...config.ROLES_MAJOR,
+        ...config.ROLES_TEST_MAJOR,
+        ...config.ROLES_GKMAJOR,
+        ...config.ROLES_TEST_GKMAJOR,
+    ]);
+}
+
+function getOnlyMentionedRoleIds(content) {
+    const text = String(content || "").trim();
+    const roleIds = [...text.matchAll(/<@&(\d+)>/g)].map((match) => match[1]);
+    const textWithoutMentions = text.replace(/<@&\d+>/g, "").trim();
+
+    return roleIds.length && !textWithoutMentions ? roleIds : [];
+}
+
+function isSmartPingMessage(message, client) {
+    if (!message || message.author?.id !== client.user?.id) {
+        return false;
+    }
+
+    const roleIds = getOnlyMentionedRoleIds(message.content);
+    if (!roleIds.length) {
+        return false;
+    }
+
+    const configuredRoleIds = getConfiguredSmartPingRoleIds();
+    return roleIds.every((roleId) => configuredRoleIds.has(roleId));
 }
 
 function wait(ms) {
@@ -151,39 +185,94 @@ async function getQueueChannel(client) {
         ?? (await client.channels.fetch(config.QUEUE_CHANNEL_ID).catch(() => null));
 }
 
-async function deletePreviousSmartPing(client, currentChannel) {
-    if (!state.lastPingMessageId) {
-        return;
+async function collectSmartPingMessages(client, currentChannel) {
+    const messagesById = new Map();
+    const channelIds = [
+        currentChannel.id,
+        state.lastPingChannelId,
+    ].filter(Boolean);
+
+    for (const channelId of [...new Set(channelIds)]) {
+        const channel = channelId === currentChannel.id
+            ? currentChannel
+            : await client.channels.fetch(channelId).catch(() => null);
+
+        if (!channel?.isTextBased()) {
+            log.warn(`Nao foi possivel varrer smart pings antigos; canal indisponivel: ${channelId}`);
+            continue;
+        }
+
+        const recentMessages = await channel.messages.fetch({ limit: PING_CLEANUP_FETCH_LIMIT }).catch((error) => {
+            log.warn(`Falha ao buscar smart pings recentes em ${channelId}:`, error.message);
+            return null;
+        });
+
+        for (const message of recentMessages?.values() || []) {
+            if (isSmartPingMessage(message, client)) {
+                messagesById.set(message.id, message);
+            }
+        }
     }
 
-    const channelId = state.lastPingChannelId || currentChannel.id;
-    const channel = channelId === currentChannel.id
-        ? currentChannel
-        : await client.channels.fetch(channelId).catch(() => null);
+    if (state.lastPingMessageId) {
+        const channelId = state.lastPingChannelId || currentChannel.id;
+        const channel = channelId === currentChannel.id
+            ? currentChannel
+            : await client.channels.fetch(channelId).catch(() => null);
 
-    if (!channel?.isTextBased()) {
-        log.warn(`Nao foi possivel apagar smart ping anterior; canal indisponivel: ${channelId}`);
-        return;
+        const trackedMessage = await channel?.messages.fetch(state.lastPingMessageId).catch(() => null);
+        if (trackedMessage && isSmartPingMessage(trackedMessage, client)) {
+            messagesById.set(trackedMessage.id, trackedMessage);
+        } else if (!trackedMessage) {
+            log.info(`Smart ping anterior nao encontrado para apagar: ${state.lastPingMessageId}`);
+            clearLastPingMessageReference();
+        }
     }
 
-    const previousMessage = await channel.messages.fetch(state.lastPingMessageId).catch(() => null);
-    if (!previousMessage) {
-        log.info(`Smart ping anterior nao encontrado para apagar: ${state.lastPingMessageId}`);
+    return [...messagesById.values()]
+        .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+}
+
+async function deleteSmartPingMessages(client, currentChannel, options = {}) {
+    const messagesToCheck = await collectSmartPingMessages(client, currentChannel);
+    let keepMessageId = options.keepMessageId || null;
+    const keepMessageFound = keepMessageId
+        && messagesToCheck.some((message) => message.id === keepMessageId);
+
+    if (keepMessageId && !keepMessageFound && options.keepLatest) {
+        keepMessageId = null;
+    }
+
+    if (!keepMessageId && options.keepLatest) {
+        keepMessageId = messagesToCheck[0]?.id || null;
+
+        if (keepMessageId) {
+            state.lastPingMessageId = keepMessageId;
+            state.lastPingChannelId = messagesToCheck[0].channelId;
+            saveState();
+        }
+    }
+
+    let deletedCount = 0;
+
+    for (const message of messagesToCheck) {
+        if (message.id === keepMessageId) {
+            continue;
+        }
+
+        await message.delete().then(() => {
+            deletedCount += 1;
+            log.info(`Smart ping antigo apagado: ${message.id}`);
+        }).catch((error) => {
+            log.warn(`Falha ao apagar smart ping antigo ${message.id}:`, error.message);
+        });
+    }
+
+    if (!keepMessageId && deletedCount > 0) {
         clearLastPingMessageReference();
-        return;
     }
 
-    if (previousMessage.author?.id !== client.user?.id) {
-        log.warn(`Smart ping anterior ${state.lastPingMessageId} nao pertence ao bot; mantendo mensagem.`);
-        return;
-    }
-
-    await previousMessage.delete().then(() => {
-        log.info(`Smart ping anterior apagado: ${previousMessage.id}`);
-        clearLastPingMessageReference();
-    }).catch((error) => {
-        log.warn("Falha ao apagar smart ping anterior:", error.message);
-    });
+    return deletedCount;
 }
 
 async function findLatestQueueSnapshot(client, expectedTotalPlayers = null) {
@@ -241,7 +330,7 @@ async function sendSmartPing(client, queueSnapshot, roleIds) {
         return null;
     }
 
-    await deletePreviousSmartPing(client, channel);
+    await deleteSmartPingMessages(client, channel);
 
     const payload = messages.buildSmartPingMessage(queueSnapshot, roleIds);
     return channel.send(payload).catch((error) => {
@@ -268,7 +357,7 @@ function resetSmartPingState(reason = "") {
     }
 }
 
-async function evaluateSmartPing(client, options = {}) {
+async function evaluateSmartPingNow(client, options = {}) {
     if (!config.SMART_PING_ENABLED) {
         return;
     }
@@ -314,6 +403,14 @@ async function evaluateSmartPing(client, options = {}) {
         Date.now() - state.lastPingAt < cooldownMs;
 
     if (state.qualified && cooldownActive) {
+        const channel = await getQueueChannel(client);
+        if (channel?.isTextBased()) {
+            await deleteSmartPingMessages(client, channel, {
+                keepMessageId: state.lastPingMessageId,
+                keepLatest: true,
+            });
+        }
+
         state.lastParsedMessageId = snapshot.messageId;
         state.lastSignature = signature;
         saveState();
@@ -343,6 +440,16 @@ async function evaluateSmartPing(client, options = {}) {
     log.ok(
         `Smart ping enviado (${options.reason || "manual"}) para ${snapshot.totalPlayers}/${snapshot.totalSlots} | GK ${snapshot.gkCount}/${snapshot.gkSlots} | LINHA ${snapshot.lineCount}/${snapshot.lineSlots}`
     );
+}
+
+function evaluateSmartPing(client, options = {}) {
+    const queuedEvaluation = smartPingEvaluationQueue.then(
+        () => evaluateSmartPingNow(client, options),
+        () => evaluateSmartPingNow(client, options)
+    );
+
+    smartPingEvaluationQueue = queuedEvaluation.catch(() => null);
+    return queuedEvaluation;
 }
 
 module.exports = {
